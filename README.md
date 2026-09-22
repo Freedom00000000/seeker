@@ -143,7 +143,7 @@ ngrok http 8080
 ```bash
 python3 seeker.py -h
 
-usage: seeker.py [-h] [-k KML] [-p PORT] [-u] [-v] [-t TEMPLATE] [-d] [--telegram token:chatId] [--webhook WEBHOOK]
+usage: seeker.py [-h] [-k KML] [-p PORT] [-u] [-v] [-t TEMPLATE] [-d] [--telegram token:chatId] [--webhook WEBHOOK] [-a] [-ap ADMIN_PORT]
 
 options:
   -h, --help                            show this help message and exit
@@ -158,6 +158,12 @@ options:
                                         format = token:chatId separated by a colon
   --webhook                             Send events to a webhook endpoint to be processed
                                         Note : endpoint must be unauthenticated and accept POST request
+  -a, --admin                           Enable the local admin/debug status page
+                                        Note : bound to 127.0.0.1 only, read-only, shows server status and full logs
+  -ap, --admin-port ADMIN_PORT          Admin/debug status page port [ Default : 8081, localhost only ]
+  -at, --admin-token ADMIN_TOKEN        Require this token to access the admin page
+                                        (X-Admin-Token header or ?token=). Recommended when
+                                        accessing the page remotely over an SSH tunnel.
 
 #########################
 # Environment Variables #
@@ -168,6 +174,9 @@ Other parameters can be provided via environment variables to avoid interactive 
 
 Variables:
   DEBUG_HTTP            Same as -d, --debugHTTP
+  ADMIN_DEBUG          Same as -a, --admin (set to 1/true to enable)
+  ADMIN_PORT           Same as -ap, --admin-port (localhost only)
+  ADMIN_TOKEN          Same as -at, --admin-token (required to access the admin page)
   PORT                  Same as -p, --port
   TEMPLATE              Same as -t, --template
   TITLE                 Provide the group title or the page title

