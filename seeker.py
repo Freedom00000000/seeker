@@ -366,6 +366,9 @@ def data_parser():
     except decoder.JSONDecodeError:
         utils.print(f'{R}[-] {C}Exception : {R}{traceback.format_exc()}{W}')
     else:
+        # Fields below are client-supplied; strip terminal control / ANSI
+        # sequences so a crafted value cannot spoof the operator's console.
+        info_json = {k: utils.sanitize_untrusted(v) for k, v in info_json.items()}
         var_os = info_json['os']
         var_platform = info_json['platform']
         var_cores = info_json['cores']
@@ -444,6 +447,9 @@ def data_parser():
         except decoder.JSONDecodeError:
             utils.print(f'{R}[-] {C}Exception : {R}{traceback.format_exc()}{W}')
         else:
+            result_json = {
+                k: utils.sanitize_untrusted(v) for k, v in result_json.items()
+            }
             status = result_json['status']
             if status == 'success':
                 var_lat = result_json['lat']
@@ -504,7 +510,8 @@ def kmlout(var_lat, var_lon):
 def csvout(row):
     with open(DATA_FILE, 'a') as csvfile:
         csvwriter = writer(csvfile)
-        csvwriter.writerow(row)
+        # Neutralise CSV / formula injection from client-supplied fields.
+        csvwriter.writerow([utils.csv_safe(cell) for cell in row])
     utils.print(f'{G}[+] {C}Data Saved : {W}{path_to_script}/db/results.csv\n')
 
 
