@@ -10,6 +10,10 @@ header('Content-Type: text/html');
   $spd = $_POST['Spd'];
   $acc_alt = $_POST['AccAlt'] ?? 'Not Available';
   $ts = $_POST['Ts'] ?? '';
+  $samples = $_POST['Samples'] ?? '';
+  $acc_best = $_POST['AccBest'] ?? '';
+  $acc_worst = $_POST['AccWorst'] ?? '';
+  $time_to_best = $_POST['TimeToBest'] ?? '';
 
   $data = array(
     'status' => $ok_status,
@@ -20,7 +24,11 @@ header('Content-Type: text/html');
     'dir' => $dir,
     'spd' => $spd,
     'acc_alt' => $acc_alt,
-    'ts' => $ts);
+    'ts' => $ts,
+    'samples' => $samples,
+    'acc_best' => $acc_best,
+    'acc_worst' => $acc_worst,
+    'time_to_best' => $time_to_best);
 
   $json_data = json_encode($data);
 

