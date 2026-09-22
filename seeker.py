@@ -45,6 +45,19 @@ parser.add_argument(
 parser.add_argument(
     '-wh', '--webhook', help='Webhook URL [ POST method & unauthenticated ]'
 )
+parser.add_argument(
+    '-a',
+    '--admin',
+    action='store_true',
+    help='Enable local admin/debug status page (localhost only)',
+)
+parser.add_argument(
+    '-ap',
+    '--admin-port',
+    type=int,
+    default=8081,
+    help='Admin/debug status page port [ Default : 8081, localhost only ]',
+)
 
 args = parser.parse_args()
 kml_fname = args.kml
@@ -53,6 +66,17 @@ chk_upd = args.update
 print_v = args.version
 telegram = getenv('TELEGRAM') or args.telegram
 webhook = getenv('WEBHOOK') or args.webhook
+
+admin_debug = (
+    getenv('ADMIN_DEBUG') is not None
+    and getenv('ADMIN_DEBUG') != '0'
+    and getenv('ADMIN_DEBUG', '').lower() != 'false'
+) or args.admin is True
+admin_port = (
+    int(getenv('ADMIN_PORT'))
+    if getenv('ADMIN_PORT') and getenv('ADMIN_PORT').isnumeric()
+    else args.admin_port
+)
 
 if (
     getenv('DEBUG_HTTP')
@@ -499,11 +523,58 @@ def cl_quit():
     sys.exit()
 
 
+def php_status():
+    running = None
+    pid = None
+    if path.isfile(PID_FILE):
+        try:
+            with open(PID_FILE, 'r') as pid_info:
+                pid = int(pid_info.read().strip())
+            running = psutil.pid_exists(pid) and (
+                psutil.Process(pid).status() != psutil.STATUS_ZOMBIE
+            )
+        except (psutil.NoSuchProcess, ValueError, OSError):
+            running = False
+    return {'php_running': running, 'pid': pid if pid is not None else '-'}
+
+
+def start_admin_debug():
+    if not admin_debug:
+        return
+    import admin_debug as admin_debug_mod
+
+    config = {
+        'version': VERSION,
+        'php_port': port,
+        'template': SITE,
+    }
+    log_files = {
+        'php.log': LOG_FILE,
+        'results.csv': DATA_FILE,
+        'info.txt': INFO,
+        'result.txt': RESULT,
+    }
+    try:
+        admin_debug_mod.start_admin_server(
+            admin_port, config, log_files, php_status
+        )
+        utils.print(
+            f'{G}[+] {C}Admin Debug page : {W}http://127.0.0.1:{admin_port}/ '
+            f'{Y}[localhost only]{W}\n'
+        )
+    except OSError as exc:
+        utils.print(
+            f'{R}[-] {C}Could not start admin debug page on port '
+            f'{W}{admin_port}{C} : {W}{exc}\n'
+        )
+
+
 try:
     banner()
     clear()
     SITE = template_select(SITE)
     server()
+    start_admin_debug()
     wait()
     data_parser()
 except KeyboardInterrupt:
