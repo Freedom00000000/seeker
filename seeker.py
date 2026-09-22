@@ -58,6 +58,12 @@ parser.add_argument(
     default=8081,
     help='Admin/debug status page port [ Default : 8081, localhost only ]',
 )
+parser.add_argument(
+    '-at',
+    '--admin-token',
+    help='Require this token to access the admin/debug page '
+    '[ via X-Admin-Token header or ?token= ]',
+)
 
 args = parser.parse_args()
 kml_fname = args.kml
@@ -77,6 +83,7 @@ admin_port = (
     if getenv('ADMIN_PORT') and getenv('ADMIN_PORT').isnumeric()
     else args.admin_port
 )
+admin_token = getenv('ADMIN_TOKEN') or args.admin_token
 
 if (
     getenv('DEBUG_HTTP')
@@ -556,11 +563,12 @@ def start_admin_debug():
     }
     try:
         admin_debug_mod.start_admin_server(
-            admin_port, config, log_files, php_status
+            admin_port, config, log_files, php_status, token=admin_token
         )
+        auth_note = 'token required' if admin_token else 'no token set'
         utils.print(
             f'{G}[+] {C}Admin Debug page : {W}http://127.0.0.1:{admin_port}/ '
-            f'{Y}[localhost only]{W}\n'
+            f'{Y}[localhost only, {auth_note}]{W}\n'
         )
     except OSError as exc:
         utils.print(

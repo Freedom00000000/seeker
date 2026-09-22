@@ -16,11 +16,13 @@ Security notes:
   * It is opt-in via the --admin flag / ADMIN_DEBUG env var.
 """
 
+import hmac
 import html
 import threading
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from ipaddress import ip_address
 from os import path
+from urllib.parse import parse_qs, urlparse
 
 
 def _read_file(fpath):
@@ -33,7 +35,7 @@ def _read_file(fpath):
         return f'(error reading file: {exc})'
 
 
-def _build_handler(config, log_files, status_fn):
+def _build_handler(config, log_files, status_fn, token=None):
     class AdminDebugHandler(BaseHTTPRequestHandler):
         # silence default stderr request logging
         def log_message(self, fmt, *fargs):
@@ -44,6 +46,17 @@ def _build_handler(config, log_files, status_fn):
                 return ip_address(self.client_address[0]).is_loopback
             except ValueError:
                 return False
+
+        def _token_ok(self):
+            # No token configured -> auth disabled (loopback guard still applies).
+            if not token:
+                return True
+            provided = self.headers.get('X-Admin-Token', '')
+            if not provided:
+                qs = parse_qs(urlparse(self.path).query)
+                provided = qs.get('token', [''])[0]
+            # constant-time compare to avoid leaking the token via timing
+            return hmac.compare_digest(str(provided), str(token))
 
         def _send(self, code, body, content_type='text/html; charset=utf-8'):
             encoded = body.encode('utf-8', errors='replace')
@@ -58,6 +71,11 @@ def _build_handler(config, log_files, status_fn):
         def do_GET(self):
             if not self._is_loopback():
                 self._send(403, 'Forbidden: admin debug page is localhost only.',
+                           'text/plain; charset=utf-8')
+                return
+
+            if not self._token_ok():
+                self._send(401, 'Unauthorized: valid admin token required.',
                            'text/plain; charset=utf-8')
                 return
 
@@ -156,13 +174,17 @@ def _build_handler(config, log_files, status_fn):
     return AdminDebugHandler
 
 
-def start_admin_server(port, config, log_files, status_fn, host='127.0.0.1'):
+def start_admin_server(port, config, log_files, status_fn, host='127.0.0.1',
+                       token=None):
     """Start the admin debug server in a daemon thread.
+
+    Bound to `host` (127.0.0.1 by default). If `token` is set, every request
+    must present it via the X-Admin-Token header or a ?token= query param.
 
     Returns the ThreadingHTTPServer instance (call .shutdown() to stop), or
     None if the listener could not be bound.
     """
-    handler = _build_handler(config, log_files, status_fn)
+    handler = _build_handler(config, log_files, status_fn, token=token)
     httpd = ThreadingHTTPServer((host, port), handler)
     thread = threading.Thread(target=httpd.serve_forever, daemon=True)
     thread.start()
